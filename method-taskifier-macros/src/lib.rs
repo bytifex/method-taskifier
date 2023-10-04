@@ -5,11 +5,10 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{quote, ToTokens};
 use syn::{
-    parse::{discouraged::Speculative, Parse, ParseStream},
+    parse::{Parse, ParseStream},
     punctuated::Punctuated,
-    token::{And, Comma, SelfValue},
-    Attribute, Binding, FnArg, Ident, ImplItem, ItemEnum, ItemImpl, ItemStruct, Pat, Receiver,
-    ReturnType, Signature, Token,
+    token::Comma,
+    Attribute, FnArg, Ident, ImplItem, ItemImpl, Pat, ReturnType, Signature, Token,
 };
 
 // fn read_exact_ident<'a>(ident_name: &'a str, input: &ParseStream) -> syn::Result<&'a str> {
@@ -25,59 +24,8 @@ use syn::{
 //     Ok(ident_name)
 // }
 
-enum UserErrorType {
-    Struct(ItemStruct),
-    Enum(ItemEnum),
-    TypeBinding(Binding),
-}
-
-impl Parse for UserErrorType {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let input_fork_0 = input.fork();
-        let input_fork_1 = input.fork();
-        let input_fork_2 = input.fork();
-        if let Ok(item_struct) = input_fork_0.parse::<ItemStruct>() {
-            input.advance_to(&input_fork_0);
-            Ok(UserErrorType::Struct(item_struct))
-        } else if let Ok(item_enum) = input_fork_1.parse::<ItemEnum>() {
-            input.advance_to(&input_fork_1);
-            Ok(UserErrorType::Enum(item_enum))
-        } else if let Ok(item_type_binding) = input_fork_2.parse::<Binding>() {
-            input.advance_to(&input_fork_2);
-            Ok(UserErrorType::TypeBinding(item_type_binding))
-        } else {
-            Err(input.error("expected struct declaration, enum declaration, or type binding"))
-        }
-    }
-}
-
-impl ToTokens for UserErrorType {
-    fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let generated_tokens = match self {
-            UserErrorType::Struct(item_struct) => {
-                quote! {
-                    #item_struct
-                }
-            }
-            UserErrorType::Enum(item_enum) => {
-                quote! {
-                    #item_enum
-                }
-            }
-            UserErrorType::TypeBinding(type_binding) => {
-                quote! {
-                    #type_binding
-                }
-            }
-        };
-        tokens.extend(quote! {
-            #generated_tokens
-        });
-    }
-}
-
 fn is_attribute_worker_fn(attr: &Attribute) -> bool {
-    let mut path_segments_iter = attr.path.segments.iter();
+    let mut path_segments_iter = attr.path().segments.iter();
     if let Some(first_segment) = path_segments_iter.next() {
         if first_segment.ident == "method_taskifier_fn" {
             return path_segments_iter.next().is_none();
@@ -307,19 +255,10 @@ fn signature_as_client_function(signature: &Signature) -> ClientFunction {
     // create empty inputs
     client_signature.inputs = Punctuated::new();
     // add &self as first parameter
-    client_signature.inputs.push(FnArg::Receiver(Receiver {
-        attrs: vec![],
-        reference: Some((
-            And {
-                spans: [Span::call_site()],
-            },
-            None,
-        )),
-        mutability: None,
-        self_token: SelfValue {
-            span: Span::call_site(),
-        },
-    }));
+
+    let tokens = quote! { &self }.into();
+    let receiver = syn::parse(tokens).unwrap();
+    client_signature.inputs.push(FnArg::Receiver(receiver));
     // add every non self (non receiver) type parameters
     client_signature
         .inputs
@@ -777,7 +716,7 @@ impl Parse for ImplBlock {
                 .items
                 .iter_mut()
                 .filter_map(|item| {
-                    if let ImplItem::Method(method) = item {
+                    if let ImplItem::Fn(method) = item {
                         let mut found_method_taskifier_fn_attribute = false;
                         method.attrs.retain(|attr| {
                             if is_attribute_worker_fn(attr) {
