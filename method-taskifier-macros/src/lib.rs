@@ -24,10 +24,10 @@ use syn::{
 //     Ok(ident_name)
 // }
 
-fn is_attribute_worker_fn(attr: &Attribute) -> bool {
+fn does_attribute_equals(attr: &Attribute, attribute_name: &str) -> bool {
     let mut path_segments_iter = attr.path().segments.iter();
     if let Some(first_segment) = path_segments_iter.next() {
-        if first_segment.ident == "method_taskifier_fn" {
+        if first_segment.ident == attribute_name {
             return path_segments_iter.next().is_none();
         }
     }
@@ -103,7 +103,7 @@ impl Parse for AsyncWorkerArgs {
     }
 }
 
-struct FnSignatures {
+struct WorkerFnSignatures {
     items: Vec<Signature>,
 }
 
@@ -414,7 +414,7 @@ fn signature_as_channeled_task_execution_match_line(
     }
 }
 
-impl FnSignatures {
+impl WorkerFnSignatures {
     fn as_task_structs(&self, serde_derive: &TokenStream2) -> TokenStream2 {
         let mut ret = TokenStream2::new();
 
@@ -469,14 +469,18 @@ impl FnSignatures {
             .collect()
     }
 
-    fn as_client_impl(&self, module_ident: &Ident) -> TokenStream2 {
+    fn as_client_impl<'a>(
+        &self,
+        module_ident: &Ident,
+        client_fn_items: impl Iterator<Item = &'a ImplItem>,
+    ) -> TokenStream2 {
         let client_functions: Vec<ClientFunction> = self
             .items
             .iter()
             .map(signature_as_client_function)
             .collect();
 
-        let client_function_definitions: TokenStream2 = client_functions
+        let worker_fn_task_sender_definitions: TokenStream2 = client_functions
             .iter()
             .map(|client_fn| {
                 let head = &client_fn.head;
@@ -485,6 +489,14 @@ impl FnSignatures {
                     #head {
                         #body
                     }
+                }
+            })
+            .collect();
+
+        let client_fn_definitions: TokenStream2 = client_fn_items
+            .map(|item| {
+                quote! {
+                    #item
                 }
             })
             .collect();
@@ -519,7 +531,9 @@ impl FnSignatures {
                     }
                 }
 
-                #client_function_definitions
+                #worker_fn_task_sender_definitions
+
+                #client_fn_definitions
             }
         }
     }
@@ -561,7 +575,11 @@ struct WorkerTaskExecutorImpl {
 }
 
 impl WorkerTaskExecutorImpl {
-    pub fn new(item_impl: &ItemImpl, module_ident: &Ident, fn_signatures: &FnSignatures) -> Self {
+    pub fn new(
+        item_impl: &ItemImpl,
+        module_ident: &Ident,
+        fn_signatures: &WorkerFnSignatures,
+    ) -> Self {
         let attrs = &item_impl.attrs;
         let defaultness = &item_impl.defaultness;
         let unsafety = &item_impl.unsafety;
@@ -702,32 +720,32 @@ impl ToTokens for WorkerTaskExecutorImpl {
 }
 
 struct ImplBlock {
-    item_impl: ItemImpl,
-    fn_items: FnSignatures,
+    worker_impl: ItemImpl,
+    worker_fn_signatures: WorkerFnSignatures,
+    client_fn_items: Vec<ImplItem>,
 }
 
 impl Parse for ImplBlock {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // let input_fork_0 = input.fork();
-        let mut item_impl: ItemImpl = input.parse()?;
+        let mut worker_impl: ItemImpl = input.parse()?;
 
-        let fn_items = FnSignatures {
-            items: item_impl
+        let worker_fn_signatures = WorkerFnSignatures {
+            items: worker_impl
                 .items
                 .iter_mut()
                 .filter_map(|item| {
                     if let ImplItem::Fn(method) = item {
-                        let mut found_method_taskifier_fn_attribute = false;
+                        let mut found_attribute = false;
                         method.attrs.retain(|attr| {
-                            if is_attribute_worker_fn(attr) {
-                                found_method_taskifier_fn_attribute = true;
+                            if does_attribute_equals(attr, "method_taskifier_worker_fn") {
+                                found_attribute = true;
                                 false
                             } else {
                                 true
                             }
                         });
 
-                        if found_method_taskifier_fn_attribute {
+                        if found_attribute {
                             Some(method.sig.clone())
                         } else {
                             None
@@ -739,18 +757,34 @@ impl Parse for ImplBlock {
                 .collect(),
         };
 
-        // for sig in fn_items.items.iter() {
-        //     if sig.asyncness.is_some() {
-        //         return Err(input_fork_0.error(format!(
-        //             "a worker function cannot be async `{}`",
-        //             sig.to_token_stream(),
-        //         )));
-        //     }
-        // }
+        let mut client_fn_items = Vec::new();
+        worker_impl.items.retain_mut(|item| {
+            if let ImplItem::Fn(method) = item {
+                let mut found_attribute = false;
+                method.attrs.retain(|attr| {
+                    if does_attribute_equals(attr, "method_taskifier_client_fn") {
+                        found_attribute = true;
+                        false
+                    } else {
+                        true
+                    }
+                });
+
+                if found_attribute {
+                    client_fn_items.push(item.clone());
+                    false
+                } else {
+                    true
+                }
+            } else {
+                return true;
+            }
+        });
 
         Ok(Self {
-            item_impl,
-            fn_items,
+            worker_impl,
+            worker_fn_signatures,
+            client_fn_items,
         })
     }
 }
@@ -769,20 +803,31 @@ pub fn method_taskifier_impl(args: TokenStream, input: TokenStream) -> TokenStre
     };
 
     let module_ident = Ident::new(&args.module_name, Span::call_site());
-    let worker_task_executor_impl =
-        WorkerTaskExecutorImpl::new(&impl_block.item_impl, &module_ident, &impl_block.fn_items);
-    let task_structs: TokenStream2 = impl_block.fn_items.as_task_structs(&serde_derive);
+    let worker_task_executor_impl = WorkerTaskExecutorImpl::new(
+        &impl_block.worker_impl,
+        &module_ident,
+        &impl_block.worker_fn_signatures,
+    );
+    let task_structs: TokenStream2 = impl_block
+        .worker_fn_signatures
+        .as_task_structs(&serde_derive);
     let task_declarations: Punctuated<TokenStream2, Comma> =
-        impl_block.fn_items.as_task_enum_variants();
-    let task_result_declarations: Punctuated<TokenStream2, Comma> =
-        impl_block.fn_items.as_task_result_enum_variants();
-    let as_task_result_functions = impl_block.fn_items.as_as_task_result_functions();
-    let channeled_task_declarations: Punctuated<TokenStream2, Comma> =
-        impl_block.fn_items.as_channeled_task_enum_variants();
-    let client_impl = impl_block.fn_items.as_client_impl(&module_ident);
-    let task_builder_functions = impl_block.fn_items.task_builder_functions();
+        impl_block.worker_fn_signatures.as_task_enum_variants();
+    let task_result_declarations: Punctuated<TokenStream2, Comma> = impl_block
+        .worker_fn_signatures
+        .as_task_result_enum_variants();
+    let as_task_result_functions = impl_block
+        .worker_fn_signatures
+        .as_as_task_result_functions();
+    let channeled_task_declarations: Punctuated<TokenStream2, Comma> = impl_block
+        .worker_fn_signatures
+        .as_channeled_task_enum_variants();
+    let client_impl = impl_block
+        .worker_fn_signatures
+        .as_client_impl(&module_ident, impl_block.client_fn_items.iter());
+    let task_builder_functions = impl_block.worker_fn_signatures.task_builder_functions();
 
-    let item_impl = &impl_block.item_impl;
+    let item_impl = &impl_block.worker_impl;
 
     let tokenstream = quote! {
         #item_impl

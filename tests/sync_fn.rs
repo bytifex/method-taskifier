@@ -31,14 +31,14 @@ mod tests {
             }
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn add(&mut self, value: f32) -> f32 {
             let mut guard = self.current_value.lock();
             *guard += value;
             *guard
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn divide(&mut self, divisor: f32) -> Result<f32, MyAsyncWorkerError> {
             if divisor == 0.0 {
                 Err(MyAsyncWorkerError::DivisionByZero)
@@ -49,10 +49,10 @@ mod tests {
             }
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn noop(&mut self) {}
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn mul(&mut self, mutliplier: f32) -> f32 {
             let mut guard = self.current_value.lock();
             *guard *= mutliplier;

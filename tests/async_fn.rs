@@ -8,7 +8,7 @@ mod tests {
     use parking_lot::Mutex;
     use tokio::time::{sleep_until, Instant};
 
-    use method_taskifier::prelude::ArcMutex;
+    use method_taskifier::{prelude::ArcMutex, AllWorkersDroppedError};
 
     #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
     pub enum MyAsyncWorkerError {
@@ -32,14 +32,14 @@ mod tests {
             }
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn add(&mut self, value: f32) -> f32 {
             let mut guard = self.current_value.lock();
             *guard += value;
             *guard
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn divide(&mut self, divisor: f32) -> Result<f32, MyAsyncWorkerError> {
             if divisor == 0.0 {
                 Err(MyAsyncWorkerError::DivisionByZero)
@@ -50,15 +50,25 @@ mod tests {
             }
         }
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub fn noop(&mut self) {}
 
-        #[method_taskifier_fn]
+        #[method_taskifier_worker_fn]
         pub async fn async_mul(&mut self, mutliplier: f32) -> f32 {
             let mut guard = self.current_value.lock();
             *guard *= mutliplier;
             *guard
         }
+
+        #[method_taskifier_client_fn]
+        pub async fn manual_add_caller(
+            &mut self,
+            value: &f32,
+        ) -> Result<f32, AllWorkersDroppedError> {
+            self.add(*value).await
+        }
+
+        pub fn non_taskified_fn(&mut self) {}
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -79,6 +89,8 @@ mod tests {
         let result = worker.async_mul(2.0).await;
         assert_eq!(*worker.current_value.lock(), 37.0);
         assert_eq!(result, 37.0);
+
+        worker.non_taskified_fn();
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -103,6 +115,10 @@ mod tests {
                 let result = client.async_mul(2.0).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 37.0);
                 assert_eq!(result, 37.0);
+
+                // let result = client.manual_add_caller(&5.0);
+                // assert_eq!(*worker.current_value.lock(), 42.0);
+                // assert_eq!(result, 42.0);
             })
         };
 

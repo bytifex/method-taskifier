@@ -44,6 +44,7 @@ mod tests {
             *guard *= mutliplier;
             *guard
         }
+        pub fn non_taskified_fn(&mut self) {}
     }
     impl MyAsyncWorker {
         pub async fn execute_task(
@@ -165,6 +166,8 @@ mod tests {
         }
     }
     pub mod my_async_worker {
+        use method_taskifier::AllWorkersDroppedError;
+
         use super::*;
         #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
         pub struct AddParams {
@@ -386,91 +389,129 @@ mod tests {
                     }
                 }
             }
-            pub async fn add(
+            pub fn add(
                 &self,
                 value: f32,
-            ) -> Result<f32, ::method_taskifier::AllWorkersDroppedError> {
+            ) -> impl ::std::future::Future<
+                Output = Result<f32, ::method_taskifier::AllWorkersDroppedError>,
+            > {
                 let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
                 let ret = self.task_sender.send(ChanneledTask::Add {
                     params: AddParams { value },
                     result_sender,
                 });
-                if let Err(e) = ret {
-                    ::log::error!("{}::Client::add, msg = {:?}", module_path!(), e);
-                    return Err(::method_taskifier::AllWorkersDroppedError);
-                }
-                match result_receiver.await {
-                    Ok(ret) => Ok(ret.0),
-                    Err(e) => {
-                        ::log::error!("{}::Client::add response, msg = {:?}", module_path!(), e);
-                        Err(::method_taskifier::AllWorkersDroppedError)
+                async move {
+                    if let Err(e) = ret {
+                        ::log::error!("{}::Client::add, msg = {:?}", module_path!(), e);
+                        return Err(::method_taskifier::AllWorkersDroppedError);
+                    }
+                    match result_receiver.await {
+                        Ok(ret) => Ok(ret.0),
+                        Err(e) => {
+                            ::log::error!(
+                                "{}::Client::add response, msg = {:?}",
+                                module_path!(),
+                                e
+                            );
+                            Err(::method_taskifier::AllWorkersDroppedError)
+                        }
                     }
                 }
             }
-            pub async fn divide(
+            pub fn divide(
                 &self,
                 divisor: f32,
-            ) -> Result<Result<f32, MyAsyncWorkerError>, ::method_taskifier::AllWorkersDroppedError>
-            {
+            ) -> impl ::std::future::Future<
+                Output = Result<
+                    Result<f32, MyAsyncWorkerError>,
+                    ::method_taskifier::AllWorkersDroppedError,
+                >,
+            > {
                 let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
                 let ret = self.task_sender.send(ChanneledTask::Divide {
                     params: DivideParams { divisor },
                     result_sender,
                 });
-                if let Err(e) = ret {
-                    ::log::error!("{}::Client::divide, msg = {:?}", module_path!(), e);
-                    return Err(::method_taskifier::AllWorkersDroppedError);
-                }
-                match result_receiver.await {
-                    Ok(ret) => Ok(ret.0),
-                    Err(e) => {
-                        ::log::error!("{}::Client::divide response, msg = {:?}", module_path!(), e);
-                        Err(::method_taskifier::AllWorkersDroppedError)
+                async move {
+                    if let Err(e) = ret {
+                        ::log::error!("{}::Client::divide, msg = {:?}", module_path!(), e);
+                        return Err(::method_taskifier::AllWorkersDroppedError);
+                    }
+                    match result_receiver.await {
+                        Ok(ret) => Ok(ret.0),
+                        Err(e) => {
+                            ::log::error!(
+                                "{}::Client::divide response, msg = {:?}",
+                                module_path!(),
+                                e
+                            );
+                            Err(::method_taskifier::AllWorkersDroppedError)
+                        }
                     }
                 }
             }
-            pub async fn noop(&self) -> Result<(), ::method_taskifier::AllWorkersDroppedError> {
+            pub fn noop(
+                &self,
+            ) -> impl ::std::future::Future<
+                Output = Result<(), ::method_taskifier::AllWorkersDroppedError>,
+            > {
                 let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
                 let ret = self.task_sender.send(ChanneledTask::Noop {
                     params: NoopParams {},
                     result_sender,
                 });
-                if let Err(e) = ret {
-                    ::log::error!("{}::Client::noop, msg = {:?}", module_path!(), e);
-                    return Err(::method_taskifier::AllWorkersDroppedError);
-                }
-                match result_receiver.await {
-                    Ok(ret) => Ok(ret.0),
-                    Err(e) => {
-                        ::log::error!("{}::Client::noop response, msg = {:?}", module_path!(), e);
-                        Err(::method_taskifier::AllWorkersDroppedError)
+                async move {
+                    if let Err(e) = ret {
+                        ::log::error!("{}::Client::noop, msg = {:?}", module_path!(), e);
+                        return Err(::method_taskifier::AllWorkersDroppedError);
+                    }
+                    match result_receiver.await {
+                        Ok(ret) => Ok(ret.0),
+                        Err(e) => {
+                            ::log::error!(
+                                "{}::Client::noop response, msg = {:?}",
+                                module_path!(),
+                                e
+                            );
+                            Err(::method_taskifier::AllWorkersDroppedError)
+                        }
                     }
                 }
             }
-            pub async fn async_mul(
+            pub fn async_mul(
                 &self,
                 mutliplier: f32,
-            ) -> Result<f32, ::method_taskifier::AllWorkersDroppedError> {
+            ) -> impl ::std::future::Future<
+                Output = Result<f32, ::method_taskifier::AllWorkersDroppedError>,
+            > {
                 let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
                 let ret = self.task_sender.send(ChanneledTask::AsyncMul {
                     params: AsyncMulParams { mutliplier },
                     result_sender,
                 });
-                if let Err(e) = ret {
-                    ::log::error!("{}::Client::async_mul, msg = {:?}", module_path!(), e);
-                    return Err(::method_taskifier::AllWorkersDroppedError);
-                }
-                match result_receiver.await {
-                    Ok(ret) => Ok(ret.0),
-                    Err(e) => {
-                        ::log::error!(
-                            "{}::Client::async_mul response, msg = {:?}",
-                            module_path!(),
-                            e
-                        );
-                        Err(::method_taskifier::AllWorkersDroppedError)
+                async move {
+                    if let Err(e) = ret {
+                        ::log::error!("{}::Client::async_mul, msg = {:?}", module_path!(), e);
+                        return Err(::method_taskifier::AllWorkersDroppedError);
+                    }
+                    match result_receiver.await {
+                        Ok(ret) => Ok(ret.0),
+                        Err(e) => {
+                            ::log::error!(
+                                "{}::Client::async_mul response, msg = {:?}",
+                                module_path!(),
+                                e
+                            );
+                            Err(::method_taskifier::AllWorkersDroppedError)
+                        }
                     }
                 }
+            }
+            pub async fn manual_add_caller(
+                &mut self,
+                value: &f32,
+            ) -> Result<f32, AllWorkersDroppedError> {
+                self.add(*value).await
             }
         }
     }
@@ -493,6 +534,8 @@ mod tests {
         let result = worker.async_mul(2.0).await;
         assert_eq!(*worker.current_value.lock(), 37.0);
         assert_eq!(result, 37.0);
+
+        worker.non_taskified_fn();
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -517,6 +560,10 @@ mod tests {
                 let result = client.async_mul(2.0).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 37.0);
                 assert_eq!(result, 37.0);
+
+                // let result = client.manual_add_caller(&5.0);
+                // assert_eq!(*worker.current_value.lock(), 42.0);
+                // assert_eq!(result, 42.0);
             })
         };
 
