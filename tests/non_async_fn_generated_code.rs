@@ -4,6 +4,7 @@ mod tests {
 
     use std::{sync::Arc, time::Duration};
 
+    use method_taskifier_macros::method_taskifier_impl;
     use parking_lot::Mutex;
     use tokio::time::{sleep_until, Instant};
 
@@ -18,6 +19,7 @@ mod tests {
     struct MyAsyncWorker {
         current_value: ArcMutex<f32>,
     }
+
     impl MyAsyncWorker {
         pub fn new(initial_value: f32) -> Self {
             Self {
@@ -39,15 +41,10 @@ mod tests {
             }
         }
         pub fn noop(&mut self) {}
-        pub async fn async_mul(&mut self, mutliplier: f32) -> f32 {
-            let mut guard = self.current_value.lock();
-            *guard *= mutliplier;
-            *guard
-        }
         pub fn non_taskified_fn(&mut self) {}
     }
     impl MyAsyncWorker {
-        pub async fn execute_task(
+        pub fn execute_task(
             &mut self,
             task: self::my_async_worker::Task,
         ) -> self::my_async_worker::TaskResult {
@@ -68,17 +65,9 @@ mod tests {
                     let ret = self.noop();
                     self::my_async_worker::TaskResult::Noop(self::my_async_worker::NoopResult(ret))
                 }
-                self::my_async_worker::Task::AsyncMul(self::my_async_worker::AsyncMulParams {
-                    mutliplier,
-                }) => {
-                    let ret = self.async_mul(mutliplier).await;
-                    self::my_async_worker::TaskResult::AsyncMul(
-                        self::my_async_worker::AsyncMulResult(ret),
-                    )
-                }
             }
         }
-        pub async fn execute_channeled_task(&mut self, task: self::my_async_worker::ChanneledTask) {
+        pub fn execute_channeled_task(&mut self, task: self::my_async_worker::ChanneledTask) {
             match task {
                 self::my_async_worker::ChanneledTask::Add {
                     result_sender,
@@ -101,16 +90,9 @@ mod tests {
                     let ret = self.noop();
                     let _ = result_sender.send(self::my_async_worker::NoopResult(ret));
                 }
-                self::my_async_worker::ChanneledTask::AsyncMul {
-                    result_sender,
-                    params: self::my_async_worker::AsyncMulParams { mutliplier },
-                } => {
-                    let ret = self.async_mul(mutliplier).await;
-                    let _ = result_sender.send(self::my_async_worker::AsyncMulResult(ret));
-                }
             }
         }
-        pub async fn try_execute_channeled_task_from_queue(
+        pub fn try_execute_channeled_task_from_queue(
             &mut self,
             receiver: &mut ::method_taskifier::task_channel::TaskReceiver<
                 self::my_async_worker::ChanneledTask,
@@ -119,7 +101,7 @@ mod tests {
             let task = receiver.try_recv();
             match task {
                 Ok(task) => {
-                    self.execute_channeled_task(task).await;
+                    self.execute_channeled_task(task);
                     return Ok(true);
                 }
                 Err(::method_taskifier::task_channel::TryRecvError::Empty) => return Ok(false),
@@ -137,7 +119,7 @@ mod tests {
             let task = receiver.recv_async().await;
             match task {
                 Ok(task) => {
-                    self.execute_channeled_task(task).await;
+                    self.execute_channeled_task(task);
                     Ok(())
                 }
                 Err(::method_taskifier::task_channel::RecvError::Disconnected) => {
@@ -145,13 +127,13 @@ mod tests {
                 }
             }
         }
-        pub async fn execute_remaining_channeled_tasks_from_queue(
+        pub fn execute_remaining_channeled_tasks_from_queue(
             &mut self,
             receiver: &mut ::method_taskifier::task_channel::TaskReceiver<
                 self::my_async_worker::ChanneledTask,
             >,
         ) -> Result<(), ::method_taskifier::AllClientsDroppedError> {
-            while self.try_execute_channeled_task_from_queue(receiver).await? {}
+            while self.try_execute_channeled_task_from_queue(receiver)? {}
             Ok(())
         }
         pub async fn execute_channeled_tasks_from_queue_until_clients_dropped(
@@ -166,8 +148,6 @@ mod tests {
         }
     }
     pub mod my_async_worker {
-        use method_taskifier::AllWorkersDroppedError;
-
         use super::*;
         #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
         pub struct AddParams {
@@ -186,17 +166,10 @@ mod tests {
         #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
         pub struct NoopResult(pub ());
         #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
-        pub struct AsyncMulParams {
-            pub mutliplier: f32,
-        }
-        #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
-        pub struct AsyncMulResult(pub f32);
-        #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
         pub enum Task {
             Add(AddParams),
             Divide(DivideParams),
             Noop(NoopParams),
-            AsyncMul(AsyncMulParams),
         }
         impl Task {
             pub fn add(value: f32) -> self::Task {
@@ -208,16 +181,12 @@ mod tests {
             pub fn noop() -> self::Task {
                 self::Task::Noop(self::NoopParams {})
             }
-            pub fn async_mul(mutliplier: f32) -> self::Task {
-                self::Task::AsyncMul(self::AsyncMulParams { mutliplier })
-            }
         }
         #[derive(:: serde :: Serialize, :: serde :: Deserialize)]
         pub enum TaskResult {
             Add(AddResult),
             Divide(DivideResult),
             Noop(NoopResult),
-            AsyncMul(AsyncMulResult),
         }
         impl TaskResult {
             pub fn as_add_result(&self) -> Option<&self::AddResult> {
@@ -241,13 +210,6 @@ mod tests {
                     None
                 }
             }
-            pub fn as_async_mul_result(&self) -> Option<&self::AsyncMulResult> {
-                if let self::TaskResult::AsyncMul(result) = self {
-                    Some(result)
-                } else {
-                    None
-                }
-            }
         }
         pub enum ChanneledTask {
             Add {
@@ -261,10 +223,6 @@ mod tests {
             Noop {
                 params: NoopParams,
                 result_sender: ::tokio::sync::oneshot::Sender<NoopResult>,
-            },
-            AsyncMul {
-                params: AsyncMulParams,
-                result_sender: ::tokio::sync::oneshot::Sender<AsyncMulResult>,
             },
         }
         pub fn channel() -> (
@@ -363,30 +321,6 @@ mod tests {
                             }
                         }
                     }
-                    self::my_async_worker::Task::AsyncMul(params) => {
-                        let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
-                        let ret =
-                            self.task_sender
-                                .send(self::my_async_worker::ChanneledTask::AsyncMul {
-                                    params,
-                                    result_sender,
-                                });
-                        if let Err(e) = ret {
-                            ::log::error!("{}::Client::async_mul, msg = {:?}", module_path!(), e);
-                            return Err(::method_taskifier::AllWorkersDroppedError);
-                        }
-                        match result_receiver.await {
-                            Ok(ret) => Ok(self::my_async_worker::TaskResult::AsyncMul(ret)),
-                            Err(e) => {
-                                ::log::error!(
-                                    "{}::Client::async_mul response, msg = {:?}",
-                                    module_path!(),
-                                    e
-                                );
-                                Err(::method_taskifier::AllWorkersDroppedError)
-                            }
-                        }
-                    }
                 }
             }
             pub fn add(
@@ -478,41 +412,6 @@ mod tests {
                     }
                 }
             }
-            pub fn async_mul(
-                &self,
-                mutliplier: f32,
-            ) -> impl ::std::future::Future<
-                Output = Result<f32, ::method_taskifier::AllWorkersDroppedError>,
-            > {
-                let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
-                let ret = self.task_sender.send(ChanneledTask::AsyncMul {
-                    params: AsyncMulParams { mutliplier },
-                    result_sender,
-                });
-                async move {
-                    if let Err(e) = ret {
-                        ::log::error!("{}::Client::async_mul, msg = {:?}", module_path!(), e);
-                        return Err(::method_taskifier::AllWorkersDroppedError);
-                    }
-                    match result_receiver.await {
-                        Ok(ret) => Ok(ret.0),
-                        Err(e) => {
-                            ::log::error!(
-                                "{}::Client::async_mul response, msg = {:?}",
-                                module_path!(),
-                                e
-                            );
-                            Err(::method_taskifier::AllWorkersDroppedError)
-                        }
-                    }
-                }
-            }
-            pub async fn manual_add_caller(
-                &mut self,
-                value: &f32,
-            ) -> Result<f32, AllWorkersDroppedError> {
-                self.add(*value).await
-            }
         }
     }
 
@@ -530,18 +429,12 @@ mod tests {
         assert_eq!(result, 18.5);
 
         worker.noop();
-
-        let result = worker.async_mul(2.0).await;
-        assert_eq!(*worker.current_value.lock(), 37.0);
-        assert_eq!(result, 37.0);
-
-        worker.non_taskified_fn();
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn single_async_worker() {
         let (sender, mut receiver) = my_async_worker::channel();
-        let mut client = my_async_worker::Client::new(sender);
+        let client = my_async_worker::Client::new(sender);
         let mut worker = MyAsyncWorker::new(7.0);
 
         let client_task = {
@@ -556,20 +449,12 @@ mod tests {
                 assert_eq!(result, 18.5);
 
                 client.noop().await.unwrap();
-
-                let result = client.async_mul(2.0).await.unwrap();
-                assert_eq!(*worker.current_value.lock(), 37.0);
-                assert_eq!(result, 37.0);
-
-                let result = client.manual_add_caller(&5.0).await.unwrap();
-                assert_eq!(*worker.current_value.lock(), 42.0);
-                assert_eq!(result, 42.0);
             })
         };
 
         tokio::spawn(async move {
             while let Ok(task) = receiver.recv_async().await {
-                worker.execute_channeled_task(task).await;
+                worker.execute_channeled_task(task);
             }
         });
 
@@ -613,13 +498,6 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(result.as_noop_result().unwrap().0, ());
-
-                let result = client
-                    .execute_task(my_async_worker::Task::async_mul(2.0))
-                    .await
-                    .unwrap();
-                assert_eq!(*worker.current_value.lock(), 37.0);
-                assert_eq!(result.as_async_mul_result().unwrap().0, 37.0);
             })
         };
 

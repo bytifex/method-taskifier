@@ -8,7 +8,7 @@ mod tests {
     use parking_lot::Mutex;
     use tokio::time::{sleep_until, Instant};
 
-    use method_taskifier::{prelude::ArcMutex, AllWorkersDroppedError};
+    use method_taskifier::prelude::ArcMutex;
 
     #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
     pub enum MyAsyncWorkerError {
@@ -53,21 +53,6 @@ mod tests {
         #[method_taskifier_worker_fn]
         pub fn noop(&mut self) {}
 
-        #[method_taskifier_worker_fn]
-        pub async fn async_mul(&mut self, mutliplier: f32) -> f32 {
-            let mut guard = self.current_value.lock();
-            *guard *= mutliplier;
-            *guard
-        }
-
-        #[method_taskifier_client_fn]
-        pub async fn manual_add_caller(
-            &mut self,
-            value: &f32,
-        ) -> Result<f32, AllWorkersDroppedError> {
-            self.add(*value).await
-        }
-
         pub fn non_taskified_fn(&mut self) {}
     }
 
@@ -85,18 +70,12 @@ mod tests {
         assert_eq!(result, 18.5);
 
         worker.noop();
-
-        let result = worker.async_mul(2.0).await;
-        assert_eq!(*worker.current_value.lock(), 37.0);
-        assert_eq!(result, 37.0);
-
-        worker.non_taskified_fn();
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn single_async_worker() {
         let (sender, mut receiver) = my_async_worker::channel();
-        let mut client = my_async_worker::Client::new(sender);
+        let client = my_async_worker::Client::new(sender);
         let mut worker = MyAsyncWorker::new(7.0);
 
         let client_task = {
@@ -111,20 +90,12 @@ mod tests {
                 assert_eq!(result, 18.5);
 
                 client.noop().await.unwrap();
-
-                let result = client.async_mul(2.0).await.unwrap();
-                assert_eq!(*worker.current_value.lock(), 37.0);
-                assert_eq!(result, 37.0);
-
-                let result = client.manual_add_caller(&5.0).await.unwrap();
-                assert_eq!(*worker.current_value.lock(), 42.0);
-                assert_eq!(result, 42.0);
             })
         };
 
         tokio::spawn(async move {
             while let Ok(task) = receiver.recv_async().await {
-                worker.execute_channeled_task(task).await;
+                worker.execute_channeled_task(task);
             }
         });
 
@@ -168,13 +139,6 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(result.as_noop_result().unwrap().0, ());
-
-                let result = client
-                    .execute_task(my_async_worker::Task::async_mul(2.0))
-                    .await
-                    .unwrap();
-                assert_eq!(*worker.current_value.lock(), 37.0);
-                assert_eq!(result.as_async_mul_result().unwrap().0, 37.0);
             })
         };
 
