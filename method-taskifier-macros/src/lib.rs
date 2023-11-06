@@ -287,6 +287,9 @@ fn signature_as_client_function(signature: &Signature) -> ClientFunction {
     let error_string_send = format!("{{}}::Client::{}, msg = {{:?}}", fn_name);
     let error_string_recv = format!("{{}}::Client::{} response, msg = {{:?}}", fn_name);
 
+    let sending_task_log_msg = format!("{{}}::Client::{}, sending task to workers", fn_name);
+    let waiting_for_task_result_log_msg = format!("{{}}::Client::{}, waiting for task result", fn_name);
+
     let head = quote! {
         pub #client_signature -> impl ::std::future::Future<Output = #client_fn_output_type>
     };
@@ -294,6 +297,8 @@ fn signature_as_client_function(signature: &Signature) -> ClientFunction {
     let task_struct_ident = function_name_as_ident(&signature.ident, "Params");
 
     let body = quote! {
+        ::log::trace!(#sending_task_log_msg, module_path!());
+
         let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
 
         let ret = self.task_sender.send(ChanneledTask::#task_variant_ident {
@@ -308,6 +313,8 @@ fn signature_as_client_function(signature: &Signature) -> ClientFunction {
                 ::log::error!(#error_string_send, module_path!(), e);
                 return Err(::method_taskifier::AllWorkersDroppedError);
             }
+
+            ::log::trace!(#waiting_for_task_result_log_msg, module_path!());
 
             match result_receiver.await {
                 Ok(ret) => Ok(ret.0),
@@ -332,14 +339,20 @@ fn signature_as_client_execute_task_match_line(
     let error_string_send = format!("{{}}::Client::{}, msg = {{:?}}", fn_name);
     let error_string_recv = format!("{{}}::Client::{} response, msg = {{:?}}", fn_name);
 
+    let sending_task_log_msg = format!("{{}}::Client::{}, sending task to workers", fn_name);
+    let waiting_for_task_result_log_msg = format!("{{}}::Client::{}, waiting for task result", fn_name);
+
     quote! {
         self::#module_ident::Task::#task_variant_ident(params) => {
+            ::log::trace!(#sending_task_log_msg, module_path!());
+
             let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
             let ret = self.task_sender.send(self::#module_ident::ChanneledTask::#task_variant_ident { params, result_sender });
             if let Err(e) = ret {
                 ::log::error!(#error_string_send, module_path!(), e);
                 return Err(::method_taskifier::AllWorkersDroppedError);
             }
+            ::log::trace!(#waiting_for_task_result_log_msg, module_path!());
             match result_receiver.await {
                 Ok(ret) => Ok(self::#module_ident::TaskResult::#task_variant_ident(ret)),
                 Err(e) => {
@@ -370,12 +383,19 @@ fn signature_as_task_execution_match_line(
         quote! {}
     };
 
+    let executing_task_log_msg = format!(
+        "Executing channeled task = {{}}::{}::{}",
+        module_ident.to_string(),
+        task_ident.to_string(),
+    );
+
     quote! {
         self::#module_ident::Task::#task_ident(
             self::#module_ident::#task_params_type_ident {
                 #fn_parameter_names
             }
         ) => {
+            ::log::trace!(#executing_task_log_msg, module_path!());
             let ret = self.#function_ident(#fn_parameter_names) #awaitness;
             self::#module_ident::TaskResult::#task_ident(self::#module_ident::#task_result_type_ident(ret))
         }
@@ -401,6 +421,17 @@ fn signature_as_channeled_task_execution_match_line(
         quote! {}
     };
 
+    let executing_channeled_task_log_msg = format!(
+        "Executing channeled task = {{}}::{}::{}",
+        module_ident.to_string(),
+        task_ident.to_string(),
+    );
+    let sending_channeled_task_result_log_msg = format!(
+        "Sending channeled task result = {{}}::{}::{}",
+        module_ident.to_string(),
+        task_ident.to_string(),
+    );
+
     quote! {
         self::#module_ident::ChanneledTask::#task_ident {
             result_sender,
@@ -408,7 +439,10 @@ fn signature_as_channeled_task_execution_match_line(
                 #fn_parameter_names
             }
         } => {
+            ::log::trace!(#executing_channeled_task_log_msg, module_path!());
             let ret = self.#function_ident(#fn_parameter_names) #awaitness;
+
+            ::log::trace!(#sending_channeled_task_result_log_msg, module_path!());
             let _ = result_sender.send(self::#module_ident::#task_result_type_ident(ret));
         }
     }

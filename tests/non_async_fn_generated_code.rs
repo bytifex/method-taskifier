@@ -4,7 +4,6 @@ mod tests {
 
     use std::{sync::Arc, time::Duration};
 
-    use method_taskifier_macros::method_taskifier_impl;
     use parking_lot::Mutex;
     use tokio::time::{sleep_until, Instant};
 
