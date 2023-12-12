@@ -80,7 +80,7 @@ impl<T: Send> TaskReceiver<T> {
     pub async fn recv_async(&mut self) -> Result<T, RecvError> {
         loop {
             if self.queue_watcher_receiver.changed().await.is_ok() {
-                match self.try_pop() {
+                match self.try_recv() {
                     Ok(task) => break Ok(task),
                     Err(TryRecvError::Disconnected) => break Err(RecvError::Disconnected),
                     Err(TryRecvError::Empty) => (),
@@ -93,23 +93,6 @@ impl<T: Send> TaskReceiver<T> {
     }
 
     pub fn try_recv(&self) -> Result<T, TryRecvError> {
-        match self.queue_watcher_receiver.has_changed() {
-            Ok(true) => self.try_pop(),
-            Ok(false) => {
-                if self.shared.sender_count.load(atomic::Ordering::SeqCst) == 0 {
-                    Err(TryRecvError::Disconnected)
-                } else {
-                    Err(TryRecvError::Empty)
-                }
-            }
-            Err(_) => {
-                // unreachable!("This could not happen, since Self also holds a clone of the sender part");
-                Err(TryRecvError::Disconnected)
-            }
-        }
-    }
-
-    pub fn try_pop(&self) -> Result<T, TryRecvError> {
         let mut queue_guard = self.shared.queue.lock();
         if let Some(task) = queue_guard.pop_front() {
             let _ = self.shared.queue_watcher_sender.send(());
