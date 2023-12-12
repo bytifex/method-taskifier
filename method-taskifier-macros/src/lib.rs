@@ -688,7 +688,7 @@ impl WorkerTaskExecutorImpl {
 
                 pub #executor_asyncness fn try_execute_channeled_task_from_queue(
                     &mut self,
-                    receiver: &mut ::method_taskifier::task_channel::TaskReceiver<self::#module_ident::ChanneledTask>,
+                    receiver: &::method_taskifier::task_channel::TaskReceiver<self::#module_ident::ChanneledTask>,
                 ) -> Result<bool, ::method_taskifier::AllClientsDroppedError> {
                     let task = receiver.try_recv();
                     match task {
@@ -721,7 +721,7 @@ impl WorkerTaskExecutorImpl {
 
                 pub #executor_asyncness fn execute_remaining_channeled_tasks_from_queue(
                     &mut self,
-                    receiver: &mut ::method_taskifier::task_channel::TaskReceiver<self::#module_ident::ChanneledTask>,
+                    receiver: &::method_taskifier::task_channel::TaskReceiver<self::#module_ident::ChanneledTask>,
                 ) -> Result<(), ::method_taskifier::AllClientsDroppedError> {
                     while self.try_execute_channeled_task_from_queue(receiver) #executor_call_awaitness ? {}
                     Ok(())

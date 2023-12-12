@@ -93,7 +93,7 @@ mod tests {
         }
         pub fn try_execute_channeled_task_from_queue(
             &mut self,
-            receiver: &mut ::method_taskifier::task_channel::TaskReceiver<
+            receiver: &::method_taskifier::task_channel::TaskReceiver<
                 self::my_async_worker::ChanneledTask,
             >,
         ) -> Result<bool, ::method_taskifier::AllClientsDroppedError> {
@@ -128,7 +128,7 @@ mod tests {
         }
         pub fn execute_remaining_channeled_tasks_from_queue(
             &mut self,
-            receiver: &mut ::method_taskifier::task_channel::TaskReceiver<
+            receiver: &::method_taskifier::task_channel::TaskReceiver<
                 self::my_async_worker::ChanneledTask,
             >,
         ) -> Result<(), ::method_taskifier::AllClientsDroppedError> {
