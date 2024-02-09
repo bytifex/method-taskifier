@@ -1,13 +1,9 @@
-mod result_option_inspect;
-
 use std::{
     any::{Any, TypeId},
     sync::Arc,
 };
 
 use parking_lot::Mutex;
-
-pub use result_option_inspect::*;
 
 pub type ArcMutex<T> = Arc<Mutex<T>>;
 
