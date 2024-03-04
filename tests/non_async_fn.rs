@@ -11,21 +11,22 @@ mod tests {
     use method_taskifier::prelude::ArcMutex;
 
     #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
-    pub enum MyAsyncWorkerError {
+    pub enum MyWorkerError {
         DivisionByZero,
     }
 
     #[derive(Clone)]
-    struct MyAsyncWorker {
+    struct MyWorker {
         current_value: ArcMutex<f32>,
     }
 
     #[method_taskifier_impl(
-        module_name = my_async_worker,
+        task_definitions_module_path = self,
+        client_name = MyClient,
         use_serde,
         // debug,
     )]
-    impl MyAsyncWorker {
+    impl MyWorker {
         pub fn new(initial_value: f32) -> Self {
             Self {
                 current_value: Arc::new(Mutex::new(initial_value)),
@@ -40,9 +41,9 @@ mod tests {
         }
 
         #[method_taskifier_worker_fn]
-        pub fn divide(&mut self, divisor: f32) -> Result<f32, MyAsyncWorkerError> {
+        pub fn divide(&mut self, divisor: f32) -> Result<f32, MyWorkerError> {
             if divisor == 0.0 {
-                Err(MyAsyncWorkerError::DivisionByZero)
+                Err(MyWorkerError::DivisionByZero)
             } else {
                 let mut guard = self.current_value.lock();
                 *guard /= divisor;
@@ -58,7 +59,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn caling_worker_method_directly() {
-        let mut worker = MyAsyncWorker::new(7.0);
+        let mut worker = MyWorker::new(7.0);
         assert_eq!(*worker.current_value.lock(), 7.0);
 
         let result = worker.divide(2.0).unwrap();
@@ -74,9 +75,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn single_async_worker() {
-        let (sender, mut receiver) = my_async_worker::channel();
-        let client = my_async_worker::Client::new(sender);
-        let mut worker = MyAsyncWorker::new(7.0);
+        let (sender, mut receiver) = channel();
+        let client = MyClient::new(sender);
+        let mut worker = MyWorker::new(7.0);
 
         let client_task = {
             let worker = worker.clone();
@@ -113,31 +114,22 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn execute_task() {
-        let (sender, mut receiver) = my_async_worker::channel();
-        let client = my_async_worker::Client::new(sender);
-        let mut worker = MyAsyncWorker::new(7.0);
+        let (sender, mut receiver) = channel();
+        let client = MyClient::new(sender);
+        let mut worker = MyWorker::new(7.0);
 
         let client_task = {
             let worker = worker.clone();
             tokio::spawn(async move {
-                let result = client
-                    .execute_task(my_async_worker::Task::divide(2.0))
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::divide(2.0)).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 3.5);
                 assert_eq!(*result.as_divide_result().unwrap().0.as_ref().unwrap(), 3.5);
 
-                let result = client
-                    .execute_task(my_async_worker::Task::add(15.0))
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::add(15.0)).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 18.5);
                 assert_eq!(result.as_add_result().unwrap().0, 18.5);
 
-                let result = client
-                    .execute_task(my_async_worker::Task::noop())
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::noop()).await.unwrap();
                 assert_eq!(result.as_noop_result().unwrap().0, ());
             })
         };

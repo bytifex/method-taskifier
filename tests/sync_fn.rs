@@ -10,21 +10,22 @@ mod tests {
     use method_taskifier::prelude::ArcMutex;
 
     #[derive(Debug, ::serde::Serialize, ::serde::Deserialize)]
-    pub enum MyAsyncWorkerError {
+    pub enum MyWorkerError {
         DivisionByZero,
     }
 
     #[derive(Clone)]
-    struct MyAsyncWorker {
+    struct MyWorker {
         current_value: ArcMutex<f32>,
     }
 
     #[method_taskifier_impl(
-        module_name = my_async_worker,
+        task_definitions_module_path = self,
+        client_name = MyClient,
         use_serde,
         // debug,
     )]
-    impl MyAsyncWorker {
+    impl MyWorker {
         pub fn new(initial_value: f32) -> Self {
             Self {
                 current_value: Arc::new(Mutex::new(initial_value)),
@@ -39,9 +40,9 @@ mod tests {
         }
 
         #[method_taskifier_worker_fn]
-        pub fn divide(&mut self, divisor: f32) -> Result<f32, MyAsyncWorkerError> {
+        pub fn divide(&mut self, divisor: f32) -> Result<f32, MyWorkerError> {
             if divisor == 0.0 {
-                Err(MyAsyncWorkerError::DivisionByZero)
+                Err(MyWorkerError::DivisionByZero)
             } else {
                 let mut guard = self.current_value.lock();
                 *guard /= divisor;
@@ -62,9 +63,9 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn synchronously_execute_tasks() {
-        let (sender, receiver) = my_async_worker::channel();
-        let client = my_async_worker::Client::new(sender);
-        let mut worker = MyAsyncWorker::new(7.0);
+        let (sender, receiver) = channel();
+        let client = MyClient::new(sender);
+        let mut worker = MyWorker::new(7.0);
 
         let result_future = client.divide(2.0);
         worker.execute_channeled_task(receiver.try_recv().unwrap());

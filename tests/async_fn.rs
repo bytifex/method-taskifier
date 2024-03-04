@@ -21,7 +21,8 @@ mod tests {
     }
 
     #[method_taskifier_impl(
-        module_name = my_async_worker,
+        task_definitions_module_path = self,
+        client_name = MyClient,
         use_serde,
         // debug,
     )]
@@ -95,8 +96,8 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn single_async_worker() {
-        let (sender, mut receiver) = my_async_worker::channel();
-        let mut client = my_async_worker::Client::new(sender);
+        let (sender, mut receiver) = channel();
+        let mut client = MyClient::new(sender);
         let mut worker = MyAsyncWorker::new(7.0);
 
         let client_task = {
@@ -142,37 +143,25 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn execute_task() {
-        let (sender, mut receiver) = my_async_worker::channel();
-        let client = my_async_worker::Client::new(sender);
+        let (sender, mut receiver) = channel();
+        let client = MyClient::new(sender);
         let mut worker = MyAsyncWorker::new(7.0);
 
         let client_task = {
             let worker = worker.clone();
             tokio::spawn(async move {
-                let result = client
-                    .execute_task(my_async_worker::Task::divide(2.0))
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::divide(2.0)).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 3.5);
                 assert_eq!(*result.as_divide_result().unwrap().0.as_ref().unwrap(), 3.5);
 
-                let result = client
-                    .execute_task(my_async_worker::Task::add(15.0))
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::add(15.0)).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 18.5);
                 assert_eq!(result.as_add_result().unwrap().0, 18.5);
 
-                let result = client
-                    .execute_task(my_async_worker::Task::noop())
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::noop()).await.unwrap();
                 assert_eq!(result.as_noop_result().unwrap().0, ());
 
-                let result = client
-                    .execute_task(my_async_worker::Task::async_mul(2.0))
-                    .await
-                    .unwrap();
+                let result = client.execute_task(Task::async_mul(2.0)).await.unwrap();
                 assert_eq!(*worker.current_value.lock(), 37.0);
                 assert_eq!(result.as_async_mul_result().unwrap().0, 37.0);
             })
