@@ -419,7 +419,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn caling_worker_method_directly() {
+    async fn calling_worker_method_directly() {
         let mut worker = MyWorker::new(7.0);
         assert_eq!(*worker.current_value.lock(), 7.0);
 
