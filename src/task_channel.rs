@@ -7,23 +7,29 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use thiserror::Error;
 use tokio::sync::watch;
 
 use crate::prelude::ArcMutex;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum SendError {
+    #[error("all receivers are dropped")]
     Disconnected,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum RecvError {
+    #[error("all senders are dropped")]
     Disconnected,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum TryRecvError {
+    #[error("the queue is empty")]
     Empty,
+
+    #[error("all senders are dropped")]
     Disconnected,
 }
 

@@ -3,21 +3,26 @@ use std::{fmt::Debug, future::Future, sync::Arc};
 pub mod prelude;
 pub mod task_channel;
 
-pub use method_taskifier_macros::method_taskifier_impl;
 use parking_lot::Mutex;
+use thiserror::Error;
 use tokio::{
     sync::watch::{self, Receiver, Sender},
     task::JoinHandle,
 };
 
-#[derive(Debug)]
+pub use method_taskifier_macros::method_taskifier_impl;
+
+#[derive(Debug, Error)]
+#[error("all workers are dropped")]
 pub struct AllWorkersDroppedError;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("all clients are dropped")]
 pub struct AllClientsDroppedError;
 
-#[derive(Debug)]
-pub struct InvalidNumberOfExecutors(pub String);
+#[derive(Debug, Error)]
+#[error("invalid number of executors: {0}")]
+pub struct InvalidNumberOfExecutors(pub u8);
 
 pub struct AsyncWorkerRunner {
     state_sender: Sender<bool>,
@@ -45,10 +50,7 @@ impl AsyncWorkerRunner {
         let worker_builder = Arc::new(Mutex::new(worker_builder));
 
         if number_of_executors == 0 {
-            return Err(InvalidNumberOfExecutors(
-                "Number of executors given to Renderer::new_async(..) has to be more than 0"
-                    .to_string(),
-            ));
+            return Err(InvalidNumberOfExecutors(number_of_executors));
         }
 
         let (sender, receiver) = watch::channel(true);
