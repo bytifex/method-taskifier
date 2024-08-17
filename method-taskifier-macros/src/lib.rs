@@ -160,17 +160,19 @@ impl Parse for MethodTaskifierImplArgs {
 }
 
 struct ClientMethod {
+    visibility: syn::Visibility,
     sig: syn::Signature,
     body: syn::Block,
 }
 
 impl ToTokens for ClientMethod {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let visibility = &self.visibility;
         let sig = &self.sig;
         let body = &self.body;
 
         tokens.extend(quote! {
-            #sig {
+            #visibility #sig {
                 #body
             }
         });
@@ -888,6 +890,7 @@ impl Parse for MethodTaskifierImpl {
 
                 if found_attribute {
                     client_methods.push(ClientMethod {
+                        visibility: method.vis.clone(),
                         sig: method.sig.clone(),
                         body: method.block.clone(),
                     });
